@@ -1,0 +1,849 @@
+package main
+
+import (
+	"context"
+	"encoding/json"
+	"fmt"
+	"log"
+	"os"
+	"os/signal"
+	"sync"
+	"syscall"
+	"time"
+
+	"github.com/segmentio/kafka-go"
+)
+
+// ========================================
+// EXAMPLE 1: Simple Producer
+// ========================================
+
+func SimpleProducer() {
+	// Create writer (producer)
+	writer := &kafka.Writer{
+		Addr:     kafka.TCP("localhost:9092"),
+		Topic:    "simple-topic",
+		Balancer: &kafka.LeastBytes{}, // Distribution strategy
+	}
+	defer writer.Close()
+
+	ctx := context.Background()
+
+	// Send single message
+	err := writer.WriteMessages(ctx, kafka.Message{
+		Key:   []byte("key-1"),
+		Value: []byte("Hello Kafka!"),
+	})
+
+	if err != nil {
+		log.Fatal("failed to write message:", err)
+	}
+
+	fmt.Println("Message sent successfully")
+}
+
+// ========================================
+// EXAMPLE 2: Producer with Idempotence and Full Durability
+// ========================================
+
+func DurableProducer() {
+	writer := &kafka.Writer{
+		Addr:         kafka.TCP("localhost:9092"),
+		Topic:        "orders",
+		Balancer:     &kafka.Hash{}, // Key-based partitioning
+		RequiredAcks: kafka.RequireAll, // acks=all
+		Async:        false, // Synchronous writes
+		Compression:  kafka.Lz4, // Compression
+		MaxAttempts:  10, // Retry attempts
+		// Idempotence is implicit with RequireAll
+		BatchSize:    100,   // Batch size
+		BatchTimeout: 10 * time.Millisecond,
+		ReadTimeout:  10 * time.Second,
+		WriteTimeout: 10 * time.Second,
+	}
+	defer writer.Close()
+
+	ctx := context.Background()
+
+	// Send message
+	order := map[string]interface{}{
+		"orderId":   "12345",
+		"amount":    99.99,
+		"timestamp": time.Now(),
+	}
+
+	orderJSON, _ := json.Marshal(order)
+
+	err := writer.WriteMessages(ctx, kafka.Message{
+		Key:   []byte(order["orderId"].(string)),
+		Value: orderJSON,
+		Headers: []kafka.Header{
+			{Key: "source", Value: []byte("order-service")},
+			{Key: "version", Value: []byte("v1")},
+		},
+	})
+
+	if err != nil {
+		log.Fatal("failed to write order:", err)
+	}
+
+	fmt.Println("Order sent with full durability")
+}
+
+// ========================================
+// EXAMPLE 3: Batch Producer (High Throughput)
+// ========================================
+
+func BatchProducer() {
+	writer := &kafka.Writer{
+		Addr:         kafka.TCP("localhost:9092"),
+		Topic:        "events",
+		Balancer:     &kafka.RoundRobin{}, // Round-robin partitioning
+		RequiredAcks: kafka.RequireOne,    // acks=1 for speed
+		Compression:  kafka.Lz4,
+		BatchSize:    1000,                 // Large batch
+		BatchTimeout: 10 * time.Millisecond, // Wait for batching
+		Async:        false,
+	}
+	defer writer.Close()
+
+	ctx := context.Background()
+
+	// Create batch of messages
+	messages := make([]kafka.Message, 0, 1000)
+	for i := 0; i < 1000; i++ {
+		messages = append(messages, kafka.Message{
+			Key:   []byte(fmt.Sprintf("key-%d", i)),
+			Value: []byte(fmt.Sprintf("event-%d", i)),
+		})
+	}
+
+	// Send batch
+	err := writer.WriteMessages(ctx, messages...)
+	if err != nil {
+		log.Fatal("failed to write batch:", err)
+	}
+
+	fmt.Printf("Sent %d messages in batch\n", len(messages))
+}
+
+// ========================================
+// EXAMPLE 4: Async Producer with Error Handling
+// ========================================
+
+func AsyncProducer() {
+	writer := &kafka.Writer{
+		Addr:         kafka.TCP("localhost:9092"),
+		Topic:        "async-events",
+		Balancer:     &kafka.Hash{},
+		RequiredAcks: kafka.RequireAll,
+		MaxAttempts:  3,
+		Async:        true, // Async mode
+	}
+	defer writer.Close()
+
+	ctx := context.Background()
+	var wg sync.WaitGroup
+
+	// Send messages asynchronously
+	for i := 0; i < 100; i++ {
+		wg.Add(1)
+		go func(idx int) {
+			defer wg.Done()
+
+			msg := kafka.Message{
+				Key:   []byte(fmt.Sprintf("key-%d", idx)),
+				Value: []byte(fmt.Sprintf("async-event-%d", idx)),
+			}
+
+			err := writer.WriteMessages(ctx, msg)
+			if err != nil {
+				log.Printf("failed to send message %d: %v", idx, err)
+			} else {
+				log.Printf("message %d sent successfully", idx)
+			}
+		}(i)
+	}
+
+	wg.Wait()
+	fmt.Println("All async messages sent")
+}
+
+// ========================================
+// EXAMPLE 5: Simple Consumer
+// ========================================
+
+func SimpleConsumer() {
+	// Create reader (consumer)
+	reader := kafka.NewReader(kafka.ReaderConfig{
+		Brokers:   []string{"localhost:9092"},
+		Topic:     "simple-topic",
+		Partition: 0, // Read from specific partition
+		MinBytes:  10e3, // 10KB
+		MaxBytes:  10e6, // 10MB
+	})
+	defer reader.Close()
+
+	ctx := context.Background()
+
+	// Read messages
+	for i := 0; i < 10; i++ {
+		msg, err := reader.ReadMessage(ctx)
+		if err != nil {
+			log.Fatal("failed to read message:", err)
+		}
+
+		fmt.Printf("Received: key=%s, value=%s, partition=%d, offset=%d\n",
+			string(msg.Key), string(msg.Value), msg.Partition, msg.Offset)
+	}
+}
+
+// ========================================
+// EXAMPLE 6: Consumer Group with Manual Commit
+// ========================================
+
+func ConsumerGroupManualCommit() {
+	reader := kafka.NewReader(kafka.ReaderConfig{
+		Brokers:        []string{"localhost:9092"},
+		GroupID:        "order-processors",
+		Topic:          "orders",
+		MinBytes:       10e3,
+		MaxBytes:       10e6,
+		CommitInterval: 0, // Disable auto-commit
+		StartOffset:    kafka.FirstOffset, // Start from beginning
+	})
+	defer reader.Close()
+
+	ctx := context.Background()
+
+	fmt.Println("Consumer group started, waiting for messages...")
+
+	for {
+		msg, err := reader.FetchMessage(ctx)
+		if err != nil {
+			log.Printf("error fetching message: %v", err)
+			break
+		}
+
+		fmt.Printf("Processing: partition=%d, offset=%d, key=%s\n",
+			msg.Partition, msg.Offset, string(msg.Key))
+
+		// Process the message
+		err = processOrder(msg)
+		if err != nil {
+			log.Printf("error processing order: %v", err)
+			// Don't commit on error, will retry
+			continue
+		}
+
+		// Commit only after successful processing
+		err = reader.CommitMessages(ctx, msg)
+		if err != nil {
+			log.Printf("error committing message: %v", err)
+		}
+	}
+}
+
+func processOrder(msg kafka.Message) error {
+	var order map[string]interface{}
+	err := json.Unmarshal(msg.Value, &order)
+	if err != nil {
+		return err
+	}
+
+	fmt.Printf("Order processed: %v\n", order)
+	// Simulate processing time
+	time.Sleep(100 * time.Millisecond)
+	return nil
+}
+
+// ========================================
+// EXAMPLE 7: Consumer Group with Auto-Commit
+// ========================================
+
+func ConsumerGroupAutoCommit() {
+	reader := kafka.NewReader(kafka.ReaderConfig{
+		Brokers:        []string{"localhost:9092"},
+		GroupID:        "analytics-group",
+		Topic:          "events",
+		MinBytes:       10e3,
+		MaxBytes:       10e6,
+		CommitInterval: time.Second, // Auto-commit every second
+		StartOffset:    kafka.LastOffset, // Start from latest
+	})
+	defer reader.Close()
+
+	ctx := context.Background()
+
+	for {
+		msg, err := reader.ReadMessage(ctx) // ReadMessage auto-commits
+		if err != nil {
+			log.Printf("error reading message: %v", err)
+			break
+		}
+
+		fmt.Printf("Event: %s\n", string(msg.Value))
+	}
+}
+
+// ========================================
+// EXAMPLE 8: Multiple Topics Consumer
+// ========================================
+
+func MultiTopicConsumer() {
+	reader := kafka.NewReader(kafka.ReaderConfig{
+		Brokers: []string{"localhost:9092"},
+		GroupID: "multi-topic-group",
+		// Subscribe to multiple topics
+		GroupTopics: []string{"orders", "payments", "shipments"},
+		MinBytes:    10e3,
+		MaxBytes:    10e6,
+	})
+	defer reader.Close()
+
+	ctx := context.Background()
+
+	for {
+		msg, err := reader.FetchMessage(ctx)
+		if err != nil {
+			log.Printf("error fetching message: %v", err)
+			break
+		}
+
+		// Route based on topic
+		switch msg.Topic {
+		case "orders":
+			handleOrder(msg)
+		case "payments":
+			handlePayment(msg)
+		case "shipments":
+			handleShipment(msg)
+		}
+
+		reader.CommitMessages(ctx, msg)
+	}
+}
+
+func handleOrder(msg kafka.Message) {
+	fmt.Printf("Order: %s\n", string(msg.Value))
+}
+
+func handlePayment(msg kafka.Message) {
+	fmt.Printf("Payment: %s\n", string(msg.Value))
+}
+
+func handleShipment(msg kafka.Message) {
+	fmt.Printf("Shipment: %s\n", string(msg.Value))
+}
+
+// ========================================
+// EXAMPLE 9: Consumer with Graceful Shutdown
+// ========================================
+
+func ConsumerWithGracefulShutdown() {
+	reader := kafka.NewReader(kafka.ReaderConfig{
+		Brokers:        []string{"localhost:9092"},
+		GroupID:        "graceful-group",
+		Topic:          "orders",
+		CommitInterval: 0, // Manual commit
+	})
+
+	// Setup signal handler
+	sigchan := make(chan os.Signal, 1)
+	signal.Notify(sigchan, syscall.SIGINT, syscall.SIGTERM)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	// Consumer goroutine
+	go func() {
+		for {
+			msg, err := reader.FetchMessage(ctx)
+			if err != nil {
+				if ctx.Err() != nil {
+					// Context cancelled, shutting down
+					return
+				}
+				log.Printf("error fetching message: %v", err)
+				continue
+			}
+
+			processOrder(msg)
+			reader.CommitMessages(ctx, msg)
+		}
+	}()
+
+	// Wait for signal
+	<-sigchan
+	fmt.Println("\nShutting down gracefully...")
+
+	// Cancel context to stop consumer
+	cancel()
+
+	// Close reader
+	if err := reader.Close(); err != nil {
+		log.Fatal("failed to close reader:", err)
+	}
+
+	fmt.Println("Consumer shutdown complete")
+}
+
+// ========================================
+// EXAMPLE 10: Parallel Message Processing
+// ========================================
+
+func ParallelConsumer() {
+	reader := kafka.NewReader(kafka.ReaderConfig{
+		Brokers:        []string{"localhost:9092"},
+		GroupID:        "parallel-group",
+		Topic:          "events",
+		CommitInterval: 0,
+	})
+	defer reader.Close()
+
+	ctx := context.Background()
+
+	// Worker pool
+	const numWorkers = 5
+	messageChan := make(chan kafka.Message, 100)
+	var wg sync.WaitGroup
+
+	// Start workers
+	for i := 0; i < numWorkers; i++ {
+		wg.Add(1)
+		go func(workerID int) {
+			defer wg.Done()
+			for msg := range messageChan {
+				fmt.Printf("Worker %d processing partition=%d offset=%d\n",
+					workerID, msg.Partition, msg.Offset)
+				
+				// Process message
+				time.Sleep(100 * time.Millisecond)
+				
+				// Commit after processing
+				reader.CommitMessages(ctx, msg)
+			}
+		}(i)
+	}
+
+	// Read and distribute messages
+	for i := 0; i < 100; i++ {
+		msg, err := reader.FetchMessage(ctx)
+		if err != nil {
+			log.Printf("error fetching message: %v", err)
+			break
+		}
+		messageChan <- msg
+	}
+
+	close(messageChan)
+	wg.Wait()
+	fmt.Println("All messages processed")
+}
+
+// ========================================
+// EXAMPLE 11: Dead Letter Queue Pattern
+// ========================================
+
+func ConsumerWithDLQ() {
+	reader := kafka.NewReader(kafka.ReaderConfig{
+		Brokers:        []string{"localhost:9092"},
+		GroupID:        "dlq-group",
+		Topic:          "orders",
+		CommitInterval: 0,
+	})
+	defer reader.Close()
+
+	// DLQ writer
+	dlqWriter := &kafka.Writer{
+		Addr:         kafka.TCP("localhost:9092"),
+		Topic:        "orders-dlq",
+		RequiredAcks: kafka.RequireAll,
+	}
+	defer dlqWriter.Close()
+
+	ctx := context.Background()
+	maxRetries := 3
+
+	for {
+		msg, err := reader.FetchMessage(ctx)
+		if err != nil {
+			log.Printf("error fetching message: %v", err)
+			break
+		}
+
+		// Try processing with retries
+		var processingErr error
+		for attempt := 0; attempt < maxRetries; attempt++ {
+			processingErr = processOrder(msg)
+			if processingErr == nil {
+				break
+			}
+			fmt.Printf("Retry %d/%d for offset %d\n", attempt+1, maxRetries, msg.Offset)
+			time.Sleep(time.Second * time.Duration(attempt+1))
+		}
+
+		if processingErr != nil {
+			// Send to DLQ after max retries
+			fmt.Printf("Sending message to DLQ: offset=%d\n", msg.Offset)
+			
+			dlqWriter.WriteMessages(ctx, kafka.Message{
+				Key:   msg.Key,
+				Value: msg.Value,
+				Headers: []kafka.Header{
+					{Key: "error", Value: []byte(processingErr.Error())},
+					{Key: "original-topic", Value: []byte(msg.Topic)},
+					{Key: "original-partition", Value: []byte(fmt.Sprintf("%d", msg.Partition))},
+					{Key: "original-offset", Value: []byte(fmt.Sprintf("%d", msg.Offset))},
+					{Key: "failed-at", Value: []byte(time.Now().Format(time.RFC3339))},
+				},
+			})
+		}
+
+		// Commit regardless of success/failure
+		reader.CommitMessages(ctx, msg)
+	}
+}
+
+// ========================================
+// EXAMPLE 12: Retry Pattern with Exponential Backoff
+// ========================================
+
+func ConsumerWithRetryTopic() {
+	mainReader := kafka.NewReader(kafka.ReaderConfig{
+		Brokers:        []string{"localhost:9092"},
+		GroupID:        "retry-group",
+		Topic:          "orders",
+		CommitInterval: 0,
+	})
+	defer mainReader.Close()
+
+	retryWriter := &kafka.Writer{
+		Addr:  kafka.TCP("localhost:9092"),
+		Topic: "orders-retry",
+	}
+	defer retryWriter.Close()
+
+	ctx := context.Background()
+
+	for {
+		msg, err := mainReader.FetchMessage(ctx)
+		if err != nil {
+			break
+		}
+
+		err = processOrder(msg)
+		if err != nil {
+			// Get retry count from header
+			retryCount := getRetryCount(msg.Headers)
+			
+			if retryCount < 3 {
+				// Send to retry topic
+				fmt.Printf("Sending to retry queue (attempt %d)\n", retryCount+1)
+				
+				retryWriter.WriteMessages(ctx, kafka.Message{
+					Key:   msg.Key,
+					Value: msg.Value,
+					Headers: append(msg.Headers, kafka.Header{
+						Key:   "retry-count",
+						Value: []byte(fmt.Sprintf("%d", retryCount+1)),
+					}),
+				})
+			} else {
+				fmt.Printf("Max retries exceeded, giving up\n")
+			}
+		}
+
+		mainReader.CommitMessages(ctx, msg)
+	}
+}
+
+func getRetryCount(headers []kafka.Header) int {
+	for _, h := range headers {
+		if h.Key == "retry-count" {
+			var count int
+			fmt.Sscanf(string(h.Value), "%d", &count)
+			return count
+		}
+	}
+	return 0
+}
+
+// ========================================
+// EXAMPLE 13: Request-Reply Pattern
+// ========================================
+
+func RequestReplyProducer() {
+	writer := &kafka.Writer{
+		Addr:  kafka.TCP("localhost:9092"),
+		Topic: "requests",
+	}
+	defer writer.Close()
+
+	// Create reply consumer
+	replyReader := kafka.NewReader(kafka.ReaderConfig{
+		Brokers:   []string{"localhost:9092"},
+		Topic:     "replies",
+		Partition: 0,
+		MinBytes:  1,
+		MaxBytes:  10e6,
+	})
+	defer replyReader.Close()
+
+	ctx := context.Background()
+	correlationID := fmt.Sprintf("req-%d", time.Now().UnixNano())
+
+	// Send request
+	request := map[string]interface{}{
+		"action": "getUser",
+		"userId": "12345",
+	}
+	requestJSON, _ := json.Marshal(request)
+
+	err := writer.WriteMessages(ctx, kafka.Message{
+		Key:   []byte(correlationID),
+		Value: requestJSON,
+		Headers: []kafka.Header{
+			{Key: "reply-to", Value: []byte("replies")},
+			{Key: "correlation-id", Value: []byte(correlationID)},
+		},
+	})
+
+	if err != nil {
+		log.Fatal("failed to send request:", err)
+	}
+
+	fmt.Println("Request sent, waiting for reply...")
+
+	// Wait for reply
+	timeout := time.After(10 * time.Second)
+	for {
+		select {
+		case <-timeout:
+			fmt.Println("Timeout waiting for reply")
+			return
+		default:
+			replyReader.SetOffset(kafka.LastOffset)
+			msg, err := replyReader.ReadMessage(ctx)
+			if err != nil {
+				continue
+			}
+
+			// Check correlation ID
+			if string(msg.Key) == correlationID {
+				fmt.Printf("Reply received: %s\n", string(msg.Value))
+				return
+			}
+		}
+	}
+}
+
+func RequestReplyServer() {
+	requestReader := kafka.NewReader(kafka.ReaderConfig{
+		Brokers:        []string{"localhost:9092"},
+		GroupID:        "reply-server",
+		Topic:          "requests",
+		CommitInterval: 0,
+	})
+	defer requestReader.Close()
+
+	replyWriter := &kafka.Writer{
+		Addr:  kafka.TCP("localhost:9092"),
+		Topic: "replies",
+	}
+	defer replyWriter.Close()
+
+	ctx := context.Background()
+
+	for {
+		msg, err := requestReader.FetchMessage(ctx)
+		if err != nil {
+			break
+		}
+
+		// Get correlation ID
+		var correlationID string
+		for _, h := range msg.Headers {
+			if h.Key == "correlation-id" {
+				correlationID = string(h.Value)
+				break
+			}
+		}
+
+		// Process request
+		var request map[string]interface{}
+		json.Unmarshal(msg.Value, &request)
+		
+		response := map[string]interface{}{
+			"userId": request["userId"],
+			"name":   "John Doe",
+			"email":  "john@example.com",
+		}
+		responseJSON, _ := json.Marshal(response)
+
+		// Send reply
+		replyWriter.WriteMessages(ctx, kafka.Message{
+			Key:   []byte(correlationID),
+			Value: responseJSON,
+			Headers: []kafka.Header{
+				{Key: "correlation-id", Value: []byte(correlationID)},
+			},
+		})
+
+		requestReader.CommitMessages(ctx, msg)
+	}
+}
+
+// ========================================
+// EXAMPLE 14: Idempotent Consumer (Deduplication)
+// ========================================
+
+type MessageTracker struct {
+	processed map[string]bool
+	mu        sync.RWMutex
+}
+
+func NewMessageTracker() *MessageTracker {
+	return &MessageTracker{
+		processed: make(map[string]bool),
+	}
+}
+
+func (mt *MessageTracker) IsProcessed(id string) bool {
+	mt.mu.RLock()
+	defer mt.mu.RUnlock()
+	return mt.processed[id]
+}
+
+func (mt *MessageTracker) MarkProcessed(id string) {
+	mt.mu.Lock()
+	defer mt.mu.Unlock()
+	mt.processed[id] = true
+}
+
+func IdempotentConsumer() {
+	reader := kafka.NewReader(kafka.ReaderConfig{
+		Brokers:        []string{"localhost:9092"},
+		GroupID:        "idempotent-group",
+		Topic:          "orders",
+		CommitInterval: 0,
+	})
+	defer reader.Close()
+
+	tracker := NewMessageTracker()
+	ctx := context.Background()
+
+	for {
+		msg, err := reader.FetchMessage(ctx)
+		if err != nil {
+			break
+		}
+
+		messageID := string(msg.Key)
+
+		// Check if already processed
+		if tracker.IsProcessed(messageID) {
+			fmt.Printf("Skipping duplicate message: %s\n", messageID)
+			reader.CommitMessages(ctx, msg)
+			continue
+		}
+
+		// Process message
+		err = processOrder(msg)
+		if err != nil {
+			log.Printf("error processing: %v", err)
+			continue
+		}
+
+		// Mark as processed
+		tracker.MarkProcessed(messageID)
+
+		// Commit offset
+		reader.CommitMessages(ctx, msg)
+	}
+}
+
+// ========================================
+// EXAMPLE 15: Monitoring and Metrics
+// ========================================
+
+func ConsumerWithMetrics() {
+	reader := kafka.NewReader(kafka.ReaderConfig{
+		Brokers:        []string{"localhost:9092"},
+		GroupID:        "metrics-group",
+		Topic:          "events",
+		CommitInterval: time.Second,
+	})
+	defer reader.Close()
+
+	ctx := context.Background()
+
+	// Metrics
+	var (
+		messagesProcessed int64
+		processingErrors  int64
+		totalLatency      time.Duration
+	)
+
+	ticker := time.NewTicker(10 * time.Second)
+	defer ticker.Stop()
+
+	go func() {
+		for range ticker.C {
+			stats := reader.Stats()
+			fmt.Printf("\n=== Consumer Metrics ===\n")
+			fmt.Printf("Messages: %d\n", messagesProcessed)
+			fmt.Printf("Errors: %d\n", processingErrors)
+			fmt.Printf("Avg Latency: %v\n", totalLatency/time.Duration(messagesProcessed))
+			fmt.Printf("Queue Length: %d\n", stats.QueueLength)
+			fmt.Printf("Queue Capacity: %d\n", stats.QueueCapacity)
+			fmt.Printf("Offset: %d\n", stats.Offset)
+			fmt.Printf("Lag: %d\n", stats.Lag)
+			fmt.Printf("========================\n")
+		}
+	}()
+
+	for {
+		start := time.Now()
+		msg, err := reader.ReadMessage(ctx)
+		if err != nil {
+			processingErrors++
+			continue
+		}
+
+		messagesProcessed++
+		totalLatency += time.Since(start)
+	}
+}
+
+// ========================================
+// MAIN FUNCTION - Run Examples
+// ========================================
+
+func main() {
+	fmt.Println("Kafka Go Examples")
+	fmt.Println("=================")
+
+	// Uncomment the example you want to run:
+
+	// SimpleProducer()
+	// DurableProducer()
+	// BatchProducer()
+	// AsyncProducer()
+	
+	// SimpleConsumer()
+	// ConsumerGroupManualCommit()
+	// ConsumerGroupAutoCommit()
+	// MultiTopicConsumer()
+	// ConsumerWithGracefulShutdown()
+	// ParallelConsumer()
+	
+	// ConsumerWithDLQ()
+	// ConsumerWithRetryTopic()
+	// RequestReplyProducer()
+	// RequestReplyServer()
+	// IdempotentConsumer()
+	// ConsumerWithMetrics()
+
+	fmt.Println("\nUncomment an example in main() to run it")
+}
