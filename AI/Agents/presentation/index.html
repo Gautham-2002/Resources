@@ -1,0 +1,771 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AI Agents & Orchestration — Presentation</title>
+  <meta name="description" content="Comprehensive presentation on AI Agents, Workflows, Orchestration Patterns, and Production Best Practices">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+<div class="presentation">
+  <div class="progress-bar"></div>
+
+  <!-- ===== SLIDE 1: Title ===== -->
+  <div class="slide slide--hero slide--centered active" data-section="intro">
+    <div class="slide-label"><span>Presentation</span></div>
+    <h1><span class="gradient-text">AI Agents &<br>Orchestration</span></h1>
+    <p class="subtitle">From stateless LLM calls to production-grade multi-agent systems.<br>Understanding the fundamentals, patterns, pitfalls, and best practices.</p>
+    <div class="grid-3" style="margin-top:2.5rem; max-width:750px;">
+      <div class="glass-card" style="text-align:center"><div class="big-number">8</div><p style="margin-top:0.3rem">Workflow Patterns</p></div>
+      <div class="glass-card" style="text-align:center"><div class="big-number">3</div><p style="margin-top:0.3rem">Orchestration Styles</p></div>
+      <div class="glass-card" style="text-align:center"><div class="big-number">5</div><p style="margin-top:0.3rem">Agent Guardrails</p></div>
+    </div>
+  </div>
+
+  <!-- ===== SLIDE 2: What is an LLM? ===== -->
+  <div class="slide slide--blue" data-section="foundations">
+    <div class="slide-label"><span>Section 1</span> — Foundations</div>
+    <h2>What is an <span class="gradient-text">LLM</span>?</h2>
+    <p class="subtitle">A stateless function. Text in → text out. No memory, no actions, no side effects.</p>
+
+    <div class="split" style="margin-top:2rem">
+      <div>
+        <div class="diagram">
+          <h3 style="margin-bottom:1rem">Every Call is Independent</h3>
+          <div class="flow-row">
+            <div class="flow-node flow-node--blue">tokens in</div>
+            <div class="flow-arrow">→</div>
+            <div class="flow-node flow-node--purple">probability distribution</div>
+            <div class="flow-arrow">→</div>
+            <div class="flow-node flow-node--cyan">tokens out</div>
+          </div>
+          <p style="font-size:0.8rem;color:var(--text-muted);margin-top:1rem;text-align:center">The model doesn't "know" it's in a conversation.<br>You reconstruct that illusion by prepending history to every prompt.</p>
+        </div>
+      </div>
+      <div>
+        <div class="glass-card">
+          <h3>🧠 Key Insight</h3>
+          <p>There is <strong>no continuity</strong> between calls. Everything that looks like memory, reasoning, or agency is your code constructing an illusion and feeding it back to a stateless function.</p>
+          <p style="margin-top:0.75rem">Once you internalize that, the entire design space of agents becomes much clearer — and the failure modes become obvious.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== SLIDE 3: What is Tool Calling? ===== -->
+  <div class="slide slide--purple" data-section="foundations">
+    <div class="slide-label"><span>Section 1</span> — Foundations</div>
+    <h2>What is <span class="gradient-text">Tool Calling</span>?</h2>
+    <p class="subtitle">Adding tools gives the LLM the ability to act — but it's still not an agent. It's a <strong>tool-augmented LLM call</strong>.</p>
+
+    <div class="diagram" style="margin-top:2rem;max-width:950px">
+      <h3 style="margin-bottom:1rem;text-align:center">The 7-Step Tool Calling Loop</h3>
+      <div class="flow-row">
+        <div class="flow-node flow-node--blue">1. You send prompt</div>
+        <div class="flow-arrow">→</div>
+        <div class="flow-node flow-node--purple">2. LLM outputs tool call (JSON)</div>
+        <div class="flow-arrow">→</div>
+        <div class="flow-node flow-node--amber">3. Runtime detects output</div>
+      </div>
+      <div class="flow-arrow-down">↓</div>
+      <div class="flow-row">
+        <div class="flow-node flow-node--cyan">7. LLM responds using result</div>
+        <div class="flow-arrow">←</div>
+        <div class="flow-node flow-node--green">6. Call LLM again</div>
+        <div class="flow-arrow">←</div>
+        <div class="flow-node flow-node--pink">5. Append to context</div>
+        <div class="flow-arrow">←</div>
+        <div class="flow-node flow-node--red">4. Execute tool</div>
+      </div>
+    </div>
+
+    <div class="callout callout--warning" style="max-width:950px;margin-top:1.5rem">
+      💡 <strong>Critical distinction:</strong> The LLM <em>suggests</em> a tool call. Your runtime code <em>executes</em> it. The LLM never touches external systems directly — it only produces structured text that your code interprets.
+    </div>
+  </div>
+
+  <!-- ===== SLIDE 4: What is an Agent? ===== -->
+  <div class="slide slide--cyan" data-section="agent">
+    <div class="slide-label"><span>Section 2</span> — Agents</div>
+    <h2>What is an <span class="gradient-text">Agent</span>?</h2>
+    <p class="subtitle">An agent = LLM + tools + a <strong>control loop where the LLM decides what to do next</strong>.</p>
+
+    <div class="split" style="margin-top:2rem">
+      <div>
+        <div class="diagram">
+          <h3 style="margin-bottom:1rem;text-align:center">The Agent Loop</h3>
+          <div class="flow-node flow-node--blue" style="width:100%;text-align:center">User gives task</div>
+          <div class="flow-arrow-down">↓</div>
+          <div class="flow-node flow-node--purple" style="width:100%;text-align:center">LLM <strong>decides</strong> next action</div>
+          <div class="flow-arrow-down">↓</div>
+          <div style="display:flex;gap:1rem;justify-content:center;margin:0.5rem 0">
+            <div class="flow-node flow-node--amber">Call a tool?</div>
+            <div class="flow-node flow-node--green">Final answer?</div>
+          </div>
+          <div class="flow-arrow-down">↓ tool result</div>
+          <div class="flow-node flow-node--cyan" style="width:100%;text-align:center">Append result to history</div>
+          <div class="loop-arrow"><span class="loop-label">loop back → LLM decides again</span></div>
+        </div>
+      </div>
+      <div>
+        <div class="glass-card" style="margin-bottom:1rem">
+          <h3>🔑 The Key Word is "Decides"</h3>
+          <p>The LLM chooses which tool to call, inspects the result, and decides whether to call another tool or stop. That loop runs until the LLM says "I'm done."</p>
+        </div>
+        <div class="glass-card" style="margin-bottom:1rem">
+          <h3>📋 Example</h3>
+          <p><em>"What is Anthropic's latest model and cost?"</em></p>
+          <ul class="feature-list">
+            <li>LLM decides → search "Anthropic latest model"</li>
+            <li>Gets result → decides → search "pricing"</li>
+            <li>Gets result → decides → final answer</li>
+          </ul>
+          <p style="margin-top:0.5rem;font-size:0.8rem;color:var(--text-muted)">The LLM decided to search twice. That wasn't in your code.</p>
+        </div>
+        <div class="callout callout--info">The LLM doesn't <em>know</em> it's in a loop. It only knows because you wrote the history into the context.</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== SLIDE 5: Why Agents Fail ===== -->
+  <div class="slide slide--red" data-section="failures">
+    <div class="slide-label"><span>Section 3</span> — Agent Failures</div>
+    <h2>Why Agents <span class="gradient-text">Fail</span></h2>
+    <p class="subtitle">Five critical failure modes you must understand before deploying agents.</p>
+
+    <div class="grid-2" style="max-width:1000px;margin-top:1.5rem">
+      <div class="glass-card" style="border-left:3px solid var(--accent-red)">
+        <h3>🎯 1. Unbounded Action Space</h3>
+        <p>Give an agent 50 tools and it will explore paths you never anticipated. More tools = more ways to go wrong. The agent might call <em>delete_user</em> when you wanted <em>search_docs</em>.</p>
+      </div>
+      <div class="glass-card" style="border-left:3px solid var(--accent-red)">
+        <h3>💥 2. Irreversible Actions</h3>
+        <p>An agent that sends emails, writes to production databases, or triggers deployments can cause <strong>real, unrecoverable damage</strong>. The LLM doesn't understand consequences.</p>
+      </div>
+      <div class="glass-card" style="border-left:3px solid var(--accent-amber)">
+        <h3>♾️ 3. No Loop Termination</h3>
+        <p>Agents get stuck in loops — repeating the same tool calls, hallucinating that they've completed the task, or endlessly "refining" their work. Without a hard stop, it runs forever.</p>
+      </div>
+      <div class="glass-card" style="border-left:3px solid var(--accent-amber)">
+        <h3>📦 4. Context Window Overflow</h3>
+        <p>As the agent loops, each tool result gets appended to the history. Context fills up, earlier reasoning gets pushed out, and the agent starts making <strong>contradictory decisions</strong>.</p>
+      </div>
+      <div class="glass-card" style="grid-column:1/-1;border-left:3px solid var(--accent-red)">
+        <h3>🚨 5. No max_iterations Hard Limit</h3>
+        <p>In production, this is <strong>non-negotiable</strong>. Without a hard iteration cap, a stuck agent burns tokens, money, and compute indefinitely. Every production agent must have a kill switch.</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== SLIDE 6: Failure Solutions ===== -->
+  <div class="slide slide--green" data-section="failures">
+    <div class="slide-label"><span>Section 3</span> — Agent Failures</div>
+    <h2>How to <span class="gradient-text">Defend</span> Against Each Failure</h2>
+
+    <div class="grid-2" style="max-width:1000px;margin-top:1.5rem">
+      <div class="glass-card">
+        <h3>🎯 Unbounded Action Space → Bounded Toolkit</h3>
+        <p>Only expose the <strong>minimum tools</strong> the agent needs for the specific task. A research agent gets <em>search</em> and <em>summarize</em> — not <em>send_email</em> or <em>delete_file</em>.</p>
+        <div class="callout callout--success" style="margin-top:0.5rem">Fewer tools = fewer failure paths = more predictable agent.</div>
+      </div>
+      <div class="glass-card">
+        <h3>💥 Irreversible Actions → Approval Gates</h3>
+        <p>Mark destructive tools (email, DB writes, deployments) as requiring <strong>human approval</strong> before execution. Use <strong>dry-run mode</strong> during development.</p>
+        <div class="callout callout--success" style="margin-top:0.5rem">The agent proposes, the human approves.</div>
+      </div>
+      <div class="glass-card">
+        <h3>♾️ No Termination → Hard Iteration Limit</h3>
+        <p>Set <strong>max_iterations</strong> (e.g., 10–15). After that many loops, force-stop the agent regardless of state. Also add a <strong>wall-clock timeout</strong> (e.g., 120 seconds).</p>
+        <div class="callout callout--success" style="margin-top:0.5rem">Always have two limits: iteration count AND time.</div>
+      </div>
+      <div class="glass-card">
+        <h3>📦 Context Overflow → Auto-Compression</h3>
+        <p>Track token usage. When context reaches ~80% of the limit, <strong>automatically summarize</strong> older messages to free space while preserving key facts and decisions.</p>
+        <div class="callout callout--success" style="margin-top:0.5rem">Monitor → warn at 80% → compress → continue.</div>
+      </div>
+    </div>
+    <div class="callout callout--warning" style="max-width:1000px;margin-top:1rem">
+      ⚡ <strong>Production rule:</strong> Every agent in production must have: bounded tools, approval gates for destructive actions, max_iterations, timeout, and context tracking. No exceptions.
+    </div>
+  </div>
+
+  <!-- ===== SLIDE 7: What is a Workflow? ===== -->
+  <div class="slide slide--blue" data-section="workflow">
+    <div class="slide-label"><span>Section 4</span> — Workflows</div>
+    <h2>What is a <span class="gradient-text">Workflow</span>?</h2>
+    <p class="subtitle">You (the developer) decide the sequence. The LLM fills in content, not structure. No autonomous decision-making.</p>
+
+    <div class="vs-container" style="margin-top:2rem;max-width:1000px">
+      <div>
+        <div class="glass-card">
+          <h3>📋 Workflow</h3>
+          <p>Control flow lives <strong>in your code</strong>. Steps are hardcoded. The LLM is just a function being called at each step.</p>
+          <div class="diagram" style="margin-top:1rem">
+            <div class="flow-node flow-node--blue" style="width:100%;text-align:center">Step 1: Summarize doc</div>
+            <div class="flow-arrow-down">↓ always</div>
+            <div class="flow-node flow-node--purple" style="width:100%;text-align:center">Step 2: Extract entities</div>
+            <div class="flow-arrow-down">↓ always</div>
+            <div class="flow-node flow-node--green" style="width:100%;text-align:center">Step 3: Write report</div>
+          </div>
+          <ul class="check-list" style="margin-top:1rem">
+            <li>Deterministic & debuggable</li>
+            <li>Fewer LLM calls = cheaper</li>
+            <li>Predictable failure modes</li>
+            <li>Full observability and tracing</li>
+          </ul>
+        </div>
+      </div>
+      <div class="vs-divider">VS</div>
+      <div>
+        <div class="glass-card">
+          <h3>🤖 Agent</h3>
+          <p>Control flow is decided <strong>by the LLM at runtime</strong>. Code provides tools and enforces the loop; the LLM drives it.</p>
+          <div class="diagram" style="margin-top:1rem">
+            <div class="flow-node flow-node--purple" style="width:100%;text-align:center">LLM decides what to do</div>
+            <div class="flow-arrow-down">↓ maybe tool A?</div>
+            <div class="flow-node flow-node--amber" style="width:100%;text-align:center">Execute → inspect result</div>
+            <div class="flow-arrow-down">↓ maybe tool B?</div>
+            <div class="flow-node flow-node--green" style="width:100%;text-align:center">LLM decides: done</div>
+          </div>
+          <ul class="feature-list" style="margin-top:1rem">
+            <li>Flexible & adaptive</li>
+            <li>More LLM calls = expensive</li>
+            <li>Opaque reasoning → hard to debug</li>
+            <li>Can waste tokens exploring dead ends</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== SLIDE 8: Workflow Patterns (1/2) ===== -->
+  <div class="slide slide--purple" data-section="workflow">
+    <div class="slide-label"><span>Section 4</span> — Workflows</div>
+    <h2>Workflow Patterns <span class="gradient-text">(1/2)</span></h2>
+
+    <div class="grid-4" style="max-width:1100px;margin-top:1.5rem">
+      <div class="glass-card">
+        <h3 style="font-size:0.9rem">🔗 Prompt Chaining</h3>
+        <div class="pattern-diagram">
+          <div class="flow-node flow-node--blue" style="font-size:0.7rem;width:100%">Step 1</div>
+          <div class="flow-arrow-down">↓</div>
+          <div class="flow-node flow-node--purple" style="font-size:0.7rem;width:100%">Step 2</div>
+          <div class="flow-arrow-down">↓</div>
+          <div class="flow-node flow-node--green" style="font-size:0.7rem;width:100%">Step 3</div>
+        </div>
+        <p style="font-size:0.75rem;color:var(--text-muted)">Fixed sequential steps. Each feeds into the next.</p>
+      </div>
+
+      <div class="glass-card">
+        <h3 style="font-size:0.9rem">🔀 Router</h3>
+        <div class="pattern-diagram">
+          <div class="flow-node flow-node--amber" style="font-size:0.7rem;width:100%">Classify Input</div>
+          <div class="flow-arrow-down">↓</div>
+          <div style="display:flex;gap:0.3rem;justify-content:center">
+            <div class="flow-node flow-node--blue" style="min-width:40px;font-size:0.65rem">A</div>
+            <div class="flow-node flow-node--purple" style="min-width:40px;font-size:0.65rem">B</div>
+            <div class="flow-node flow-node--green" style="min-width:40px;font-size:0.65rem">C</div>
+          </div>
+        </div>
+        <p style="font-size:0.75rem;color:var(--text-muted)">Input type determines which specialist handles it.</p>
+      </div>
+
+      <div class="glass-card">
+        <h3 style="font-size:0.9rem">📡 Fan-out / Fan-in</h3>
+        <div class="pattern-diagram">
+          <div class="flow-node flow-node--blue" style="font-size:0.7rem;width:100%">Split</div>
+          <div class="flow-arrow-down">↓</div>
+          <div style="display:flex;gap:0.3rem;justify-content:center">
+            <div class="flow-node flow-node--cyan" style="min-width:30px;font-size:0.65rem">W1</div>
+            <div class="flow-node flow-node--cyan" style="min-width:30px;font-size:0.65rem">W2</div>
+            <div class="flow-node flow-node--cyan" style="min-width:30px;font-size:0.65rem">W3</div>
+          </div>
+          <div class="flow-arrow-down">↓</div>
+          <div class="flow-node flow-node--green" style="font-size:0.7rem;width:100%">Aggregate</div>
+        </div>
+        <p style="font-size:0.75rem;color:var(--text-muted)">Independent subtasks run in parallel, then merge.</p>
+      </div>
+
+      <div class="glass-card">
+        <h3 style="font-size:0.9rem">🎯 Orchestrator-Worker</h3>
+        <div class="pattern-diagram">
+          <div class="flow-node flow-node--amber" style="font-size:0.7rem;width:100%">Orchestrator</div>
+          <div class="flow-arrow-down">↓ decompose</div>
+          <div style="display:flex;gap:0.3rem;justify-content:center">
+            <div class="flow-node flow-node--blue" style="min-width:30px;font-size:0.65rem">A</div>
+            <div class="flow-node flow-node--purple" style="min-width:30px;font-size:0.65rem">B</div>
+            <div class="flow-node flow-node--cyan" style="min-width:30px;font-size:0.65rem">C</div>
+          </div>
+          <div class="flow-arrow-down">↓ synthesize</div>
+          <div class="flow-node flow-node--green" style="font-size:0.7rem;width:100%">Result</div>
+        </div>
+        <p style="font-size:0.75rem;color:var(--text-muted)">LLM dynamically breaks task into subtasks.</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== SLIDE 9: Workflow Patterns (2/2) ===== -->
+  <div class="slide slide--cyan" data-section="workflow">
+    <div class="slide-label"><span>Section 4</span> — Workflows</div>
+    <h2>Workflow Patterns <span class="gradient-text">(2/2)</span></h2>
+
+    <div class="grid-4" style="max-width:1100px;margin-top:1.5rem">
+      <div class="glass-card">
+        <h3 style="font-size:0.9rem">✅ Evaluator-Optimizer</h3>
+        <div class="pattern-diagram">
+          <div class="flow-node flow-node--blue" style="font-size:0.7rem;width:100%">Generate</div>
+          <div class="flow-arrow-down">↓</div>
+          <div class="flow-node flow-node--amber" style="font-size:0.7rem;width:100%">Evaluate</div>
+          <div class="flow-arrow-down">↓</div>
+          <div class="flow-node flow-node--green" style="font-size:0.7rem;width:100%">Pass? → Done</div>
+          <div class="loop-arrow"><span class="loop-label">fail → retry</span></div>
+        </div>
+        <p style="font-size:0.75rem;color:var(--text-muted)">Output must meet quality criteria before passing.</p>
+      </div>
+
+      <div class="glass-card">
+        <h3 style="font-size:0.9rem">🪞 Reflection</h3>
+        <div class="pattern-diagram">
+          <div class="flow-node flow-node--blue" style="font-size:0.7rem;width:100%">Draft</div>
+          <div class="flow-arrow-down">↓</div>
+          <div class="flow-node flow-node--red" style="font-size:0.7rem;width:100%">Self-Critique</div>
+          <div class="flow-arrow-down">↓</div>
+          <div class="flow-node flow-node--green" style="font-size:0.7rem;width:100%">Improved</div>
+          <div class="loop-arrow"><span class="loop-label">iterate N times</span></div>
+        </div>
+        <p style="font-size:0.75rem;color:var(--text-muted)">Agent reviews and improves its own output.</p>
+      </div>
+
+      <div class="glass-card">
+        <h3 style="font-size:0.9rem">🗺️ Map-Reduce</h3>
+        <div class="pattern-diagram">
+          <div class="flow-node flow-node--dark" style="font-size:0.7rem;width:100%">Large Data</div>
+          <div class="flow-arrow-down">↓ split</div>
+          <div style="display:flex;gap:0.3rem;justify-content:center">
+            <div class="flow-node flow-node--blue" style="min-width:30px;font-size:0.65rem">C1</div>
+            <div class="flow-node flow-node--blue" style="min-width:30px;font-size:0.65rem">C2</div>
+            <div class="flow-node flow-node--blue" style="min-width:30px;font-size:0.65rem">CN</div>
+          </div>
+          <div class="flow-arrow-down">↓</div>
+          <div class="flow-node flow-node--green" style="font-size:0.7rem;width:100%">Reduce</div>
+        </div>
+        <p style="font-size:0.75rem;color:var(--text-muted)">Process chunks separately, then aggregate results.</p>
+      </div>
+
+      <div class="glass-card">
+        <h3 style="font-size:0.9rem">🤝 Handoff</h3>
+        <div class="pattern-diagram">
+          <div class="flow-node flow-node--blue" style="font-size:0.7rem;width:100%">Agent A</div>
+          <div class="flow-arrow-down">↓ context</div>
+          <div class="flow-node flow-node--purple" style="font-size:0.7rem;width:100%">Agent B</div>
+          <div class="flow-arrow-down">↓ context</div>
+          <div class="flow-node flow-node--green" style="font-size:0.7rem;width:100%">Agent C</div>
+        </div>
+        <p style="font-size:0.75rem;color:var(--text-muted)">Agent-to-agent delegation with context transfer.</p>
+      </div>
+    </div>
+
+    <div class="callout callout--info" style="max-width:1100px;margin-top:1rem">
+      <strong>How to choose:</strong> Fixed sequence → Chaining · Input determines handler → Router · Independent tasks → Fan-out · Too complex to pre-plan → Orchestrator-Worker · Needs quality → Evaluator/Reflection · Large data → Map-Reduce · Multi-specialist → Handoff
+    </div>
+  </div>
+
+  <!-- ===== SLIDE 10: When to Use What ===== -->
+  <div class="slide slide--green" data-section="decision">
+    <div class="slide-label"><span>Section 5</span> — Decision Framework</div>
+    <h2>When to Use <span class="gradient-text">What</span></h2>
+
+    <div class="decision-tree" style="max-width:850px;margin-top:1.5rem">
+      <div class="tree-node tree-node--question">Can the task be solved with a single prompt?</div>
+      <div class="tree-node tree-node--answer">✅ YES → Plain LLM call. Stop here.</div>
+      <div class="tree-node tree-node--continue">❌ NO → Continue ↓</div>
+
+      <div class="tree-node tree-node--question" style="margin-top:1rem">Are the steps known and fixed before runtime?</div>
+      <div class="tree-node tree-node--answer">✅ YES → <strong>Workflow.</strong> Predictable, auditable, cheap.</div>
+      <div class="tree-node tree-node--continue">❌ NO → Continue ↓</div>
+
+      <div class="tree-node tree-node--question" style="margin-top:1rem">Do you not know how many steps or which tools are needed?</div>
+      <div class="tree-node tree-node--answer">✅ YES → <strong>Single Agent.</strong> But add guardrails first.</div>
+      <div class="tree-node tree-node--continue">❌ Still too complex → Continue ↓</div>
+
+      <div class="tree-node tree-node--question" style="margin-top:1rem">Is the task too large for one context window, or are sub-tasks parallelisable?</div>
+      <div class="tree-node tree-node--answer">✅ YES → <strong>Multi-Agent.</strong> But only if single agent genuinely can't handle it.</div>
+    </div>
+
+    <div class="callout callout--warning" style="max-width:850px;margin-top:1.5rem">
+      ⚠️ <strong>The #1 mistake:</strong> Jumping straight to multi-agent because it sounds more powerful. A well-designed single agent handles most real-world tasks. Add agents only when you hit a concrete limitation.
+    </div>
+  </div>
+
+  <!-- ===== SLIDE 11: What is Multi-Agent? ===== -->
+  <div class="slide slide--purple" data-section="multi-agent">
+    <div class="slide-label"><span>Section 6</span> — Multi-Agent</div>
+    <h2>What is <span class="gradient-text">Multi-Agent</span>?</h2>
+    <p class="subtitle">Multiple independent agent loops, each with their own LLM, memory, and tools, where one can direct or spawn another.</p>
+
+    <div class="split" style="margin-top:2rem;max-width:1000px">
+      <div>
+        <div class="diagram">
+          <h3 style="margin-bottom:1rem;text-align:center">Multi-Agent Architecture</h3>
+          <div class="flow-node flow-node--amber" style="width:100%;text-align:center">Orchestrator / Manager</div>
+          <div class="flow-arrow-down">↓ directs</div>
+          <div style="display:flex;gap:0.75rem;justify-content:center;margin:0.5rem 0">
+            <div style="text-align:center">
+              <div class="flow-node flow-node--blue">Researcher</div>
+              <p style="font-size:0.65rem;color:var(--text-muted);margin-top:4px">own LLM + tools</p>
+            </div>
+            <div style="text-align:center">
+              <div class="flow-node flow-node--purple">Analyst</div>
+              <p style="font-size:0.65rem;color:var(--text-muted);margin-top:4px">own LLM + tools</p>
+            </div>
+            <div style="text-align:center">
+              <div class="flow-node flow-node--green">Writer</div>
+              <p style="font-size:0.65rem;color:var(--text-muted);margin-top:4px">own LLM + tools</p>
+            </div>
+          </div>
+          <div class="flow-arrow-down">↓ results</div>
+          <div class="flow-node flow-node--cyan" style="width:100%;text-align:center">Final Output</div>
+        </div>
+      </div>
+      <div>
+        <div class="glass-card" style="margin-bottom:1rem">
+          <h3>🎯 When to Use Multi-Agent</h3>
+          <ul class="check-list">
+            <li>Task is too large for one context window</li>
+            <li>Sub-tasks are genuinely parallelisable</li>
+            <li>You need specialisation (coder, tester, reviewer)</li>
+          </ul>
+        </div>
+        <div class="glass-card">
+          <h3>⚠️ The Real Cost</h3>
+          <ul class="feature-list danger-list">
+            <li>More latency (serial agent calls)</li>
+            <li>More cost (multiple LLM calls per agent)</li>
+            <li>Harder to debug (opaque reasoning × N agents)</li>
+            <li>Error propagation across the chain</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== SLIDE 12: Multi-Agent Challenges ===== -->
+  <div class="slide slide--red" data-section="multi-agent">
+    <div class="slide-label"><span>Section 6</span> — Multi-Agent</div>
+    <h2>Multi-Agent <span class="gradient-text">Challenges</span></h2>
+    <p class="subtitle">When you put multiple agents in a pipeline, these problems emerge.</p>
+
+    <div class="grid-2" style="max-width:1000px;margin-top:1.5rem">
+      <div class="glass-card" style="border-left:3px solid var(--accent-red)">
+        <h3>📦 1. Context Explosion</h3>
+        <p>Each agent appends its output to the prompt for the next agent. By agent 3, the prompt is enormous. By agent N, you've hit the context limit.</p>
+        <div class="diagram" style="margin-top:0.75rem;padding:0.75rem">
+          <div class="flow-row" style="gap:0.3rem">
+            <div class="flow-node flow-node--green" style="font-size:0.65rem;min-width:70px">Agent 1<br>2K tokens</div>
+            <div class="flow-arrow">→</div>
+            <div class="flow-node flow-node--amber" style="font-size:0.65rem;min-width:70px">Agent 2<br>5K tokens</div>
+            <div class="flow-arrow">→</div>
+            <div class="flow-node flow-node--red" style="font-size:0.65rem;min-width:70px">Agent 3<br>9K tokens</div>
+            <div class="flow-arrow">→</div>
+            <div class="flow-node flow-node--red" style="font-size:0.65rem;min-width:70px;border-width:2px">Agent N<br>💥 Limit!</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="glass-card" style="border-left:3px solid var(--accent-red)">
+        <h3>🔄 2. Error Propagation</h3>
+        <p>Agent 1 hallucinates → Agent 2 builds on the hallucination → Agent 3 makes it worse. <strong>Errors compound</strong> across the chain. There's no self-correction between agents.</p>
+      </div>
+
+      <div class="glass-card" style="border-left:3px solid var(--accent-amber)">
+        <h3>⏱️ 3. Latency Stacking</h3>
+        <p>3 agents × 5 tool calls each × 2s per call = <strong>30 seconds minimum</strong>. Sequential agents multiply latency linearly. Users won't wait.</p>
+      </div>
+
+      <div class="glass-card" style="border-left:3px solid var(--accent-amber)">
+        <h3>💸 4. Cost Amplification</h3>
+        <p>Each agent loop compounds token usage. Input tokens grow with each agent. A 3-agent pipeline with 5 turns each = <strong>15+ LLM calls</strong>, each with growing context.</p>
+      </div>
+
+      <div class="glass-card" style="grid-column:1/-1;border-left:3px solid var(--accent-amber)">
+        <h3>🔍 5. Debugging Opacity</h3>
+        <p>When 3 agents each make 5 decisions, you have <strong>15 opaque reasoning steps</strong>. Finding which agent made the wrong decision at which point is like finding a needle in a haystack. Traditional debugging doesn't work.</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== SLIDE 13: Multi-Agent Solutions ===== -->
+  <div class="slide slide--green" data-section="multi-agent">
+    <div class="slide-label"><span>Section 6</span> — Multi-Agent</div>
+    <h2>How to <span class="gradient-text">Solve</span> Each Challenge</h2>
+
+    <div class="grid-2" style="max-width:1050px;margin-top:1.5rem">
+      <div class="glass-card">
+        <h3>📦 Context Explosion → Summarize Between Agents</h3>
+        <p>Before passing one agent's output to the next, <strong>compress it</strong>. Summarize to keep only key findings, decisions, and data points. Discard verbose explanations.</p>
+        <div class="diagram" style="margin-top:0.75rem;padding:0.75rem">
+          <div class="flow-row" style="gap:0.3rem">
+            <div class="flow-node flow-node--blue" style="font-size:0.65rem;min-width:60px">Agent 1<br>3K out</div>
+            <div class="flow-arrow">→</div>
+            <div class="flow-node flow-node--amber" style="font-size:0.65rem;min-width:60px">🗜️ Compress<br>→ 500 tokens</div>
+            <div class="flow-arrow">→</div>
+            <div class="flow-node flow-node--green" style="font-size:0.65rem;min-width:60px">Agent 2<br>gets 500</div>
+          </div>
+        </div>
+        <p style="font-size:0.78rem;margin-top:0.5rem">Also consider: <strong>selective context</strong> (only pass what the next agent needs) and <strong>shared memory</strong> (KV store instead of prompt stuffing) and <strong>token budgets</strong> (enforce max per step).</p>
+      </div>
+
+      <div class="glass-card">
+        <h3>🔄 Error Propagation → Validation Gates</h3>
+        <p>Add an <strong>evaluation step between each agent</strong>. Before Agent 2 receives Agent 1's output, a validator checks: Is this factually consistent? Does it answer the question? Are there hallucinations?</p>
+        <div class="diagram" style="margin-top:0.75rem;padding:0.75rem">
+          <div class="flow-row" style="gap:0.3rem">
+            <div class="flow-node flow-node--blue" style="font-size:0.65rem">Agent 1</div>
+            <div class="flow-arrow">→</div>
+            <div class="flow-node flow-node--amber" style="font-size:0.65rem">✓ Validate</div>
+            <div class="flow-arrow">→</div>
+            <div class="flow-node flow-node--green" style="font-size:0.65rem">Agent 2</div>
+          </div>
+        </div>
+        <p style="font-size:0.78rem;margin-top:0.5rem">The validator can be an LLM call, a rule-based check, or both.</p>
+      </div>
+
+      <div class="glass-card">
+        <h3>⏱️ Latency Stacking → Parallelise + Timeout</h3>
+        <p>Use <strong>Fan-out</strong> for independent sub-tasks — run them concurrently instead of sequentially. Set <strong>per-agent timeouts</strong>. Use <strong>cheaper/faster models</strong> for intermediate steps that don't need full reasoning power.</p>
+        <div class="callout callout--success" style="margin-top:0.5rem">3 parallel agents in 2s each = 2s total, not 6s.</div>
+      </div>
+
+      <div class="glass-card">
+        <h3>💸 Cost Amplification → Tiered Models + Caching</h3>
+        <p>Not every agent needs GPT-4. Use <strong>smaller models</strong> for classification, extraction, and validation. <strong>Cache frequent tool results</strong> so agents don't re-fetch the same data. Set <strong>token budgets</strong> per agent.</p>
+        <div class="callout callout--success" style="margin-top:0.5rem">Orchestrator: GPT-4. Workers: GPT-4o-mini. Saves 90% cost.</div>
+      </div>
+
+      <div class="glass-card" style="grid-column:1/-1">
+        <h3>🔍 Debugging Opacity → Structured Observability</h3>
+        <p>Assign a <strong>trace ID</strong> to each multi-agent run. Log every agent's input, tool calls, decisions, and output with <strong>structured JSON</strong>. Use a <strong>correlation ID</strong> to link all agents in a single run. Build dashboards to visualise the flow. This turns an opaque chain into a debuggable pipeline.</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== SLIDE 14: What is Agent Orchestration? ===== -->
+  <div class="slide slide--blue" data-section="orchestration">
+    <div class="slide-label"><span>Section 7</span> — Orchestration</div>
+    <h2>What is <span class="gradient-text">Agent Orchestration</span>?</h2>
+    <p class="subtitle">The mechanism by which agents are coordinated. It's the routing layer.</p>
+
+    <div class="split" style="margin-top:2rem;max-width:1000px">
+      <div>
+        <div class="glass-card" style="margin-bottom:1rem">
+          <h3>🎯 The Core Idea</h3>
+          <p>Agent orchestration = <strong>something is managing the flow</strong>. It applies to both single-agent (orchestrating tool calls) and multi-agent (orchestrating which agent does what).</p>
+        </div>
+        <div class="glass-card" style="margin-bottom:1rem">
+          <h3>📋 Two Flavours</h3>
+          <table class="data-table">
+            <thead><tr><th>Type</th><th>Who Controls Flow?</th></tr></thead>
+            <tbody>
+              <tr><td><strong>Code-based</strong></td><td>Your code (deterministic, predictable)</td></tr>
+              <tr><td><strong>LLM-based</strong></td><td>An LLM (flexible, autonomous)</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="callout callout--info">
+          <strong>The bottom line:</strong> Orchestration is the routing layer. Multi-agent just means the things being orchestrated are themselves agent loops, not plain functions.
+        </div>
+      </div>
+      <div>
+        <div class="diagram">
+          <h3 style="margin-bottom:1rem;text-align:center">Orchestration = Routing Layer</h3>
+          <div class="flow-node flow-node--amber" style="width:100%;text-align:center">Orchestrator<br><span style="font-size:0.7rem">(your code OR an LLM)</span></div>
+          <div class="flow-arrow-down">↓ routes work to</div>
+          <div style="display:flex;gap:0.75rem;justify-content:center;margin:0.5rem 0">
+            <div class="flow-node flow-node--blue">Agent / Function</div>
+            <div class="flow-node flow-node--purple">Agent / Function</div>
+            <div class="flow-node flow-node--green">Agent / Function</div>
+          </div>
+          <div class="flow-arrow-down">↓ collects results</div>
+          <div class="flow-node flow-node--cyan" style="width:100%;text-align:center">Synthesised Output</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== SLIDE 15: Orchestration Patterns ===== -->
+  <div class="slide slide--purple" data-section="orchestration">
+    <div class="slide-label"><span>Section 7</span> — Orchestration</div>
+    <h2>Orchestration <span class="gradient-text">Patterns</span></h2>
+    <p class="subtitle">How does your agent system decide what to do next?</p>
+
+    <div class="grid-3" style="max-width:1100px;margin-top:1.5rem">
+      <div class="glass-card">
+        <h3>🔄 State Machine</h3>
+        <div class="pattern-diagram">
+          <div class="flow-node flow-node--blue" style="width:100%;font-size:0.75rem">New</div>
+          <div class="flow-arrow-down">↓</div>
+          <div class="flow-node flow-node--amber" style="width:100%;font-size:0.75rem">Validated</div>
+          <div class="flow-arrow-down">↓</div>
+          <div class="flow-node flow-node--green" style="width:100%;font-size:0.75rem">Fulfilled</div>
+          <div class="flow-arrow-down">↓</div>
+          <div class="flow-node flow-node--cyan" style="width:100%;font-size:0.75rem">Shipped</div>
+        </div>
+        <p style="font-size:0.78rem;margin-top:0.5rem"><span class="badge badge--green">HIGH Predictability</span></p>
+        <p style="font-size:0.78rem;color:var(--text-muted)">Every state and transition is known at design time. Best for fixed, well-known workflows.</p>
+      </div>
+      <div class="glass-card">
+        <h3>📊 DAG (Directed Acyclic Graph)</h3>
+        <div class="pattern-diagram">
+          <div class="flow-node flow-node--blue" style="width:100%;font-size:0.75rem">Fetch</div>
+          <div class="flow-arrow-down">↓</div>
+          <div style="display:flex;gap:0.5rem;justify-content:center">
+            <div class="flow-node flow-node--purple" style="font-size:0.7rem">Clean</div>
+            <div class="flow-node flow-node--cyan" style="font-size:0.7rem">Analyze</div>
+          </div>
+          <div class="flow-arrow-down">↓</div>
+          <div class="flow-node flow-node--green" style="width:100%;font-size:0.75rem">Summarize</div>
+        </div>
+        <p style="font-size:0.78rem;margin-top:0.5rem"><span class="badge badge--amber">MED Predictability</span></p>
+        <p style="font-size:0.78rem;color:var(--text-muted)">Known steps, flexible execution order. Steps run when dependencies are met.</p>
+      </div>
+      <div class="glass-card">
+        <h3>🌐 Dynamic Graph</h3>
+        <div class="pattern-diagram">
+          <div class="flow-node flow-node--purple" style="width:100%;font-size:0.75rem">LLM Decides</div>
+          <div class="flow-arrow-down">↓ ?</div>
+          <div style="display:flex;gap:0.5rem;justify-content:center">
+            <div class="flow-node flow-node--blue" style="font-size:0.7rem">Search</div>
+            <div class="flow-node flow-node--amber" style="font-size:0.7rem">Analyze</div>
+            <div class="flow-node flow-node--green" style="font-size:0.7rem">Done</div>
+          </div>
+          <div class="loop-arrow"><span class="loop-label">runtime decisions</span></div>
+        </div>
+        <p style="font-size:0.78rem;margin-top:0.5rem"><span class="badge badge--red">LOW Predictability</span></p>
+        <p style="font-size:0.78rem;color:var(--text-muted)">Graph shape determined at runtime by the LLM. Maximum flexibility.</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== SLIDE 16: Production Best Practices ===== -->
+  <div class="slide slide--cyan" data-section="production">
+    <div class="slide-label"><span>Section 8</span> — Production</div>
+    <h2><span class="gradient-text">Production</span> Best Practices</h2>
+    <p class="subtitle">Essential patterns for deploying agents that don't bring down your infrastructure.</p>
+
+    <div class="grid-3" style="max-width:1100px;margin-top:1.5rem">
+      <div class="glass-card">
+        <h3>🔄 Retry + Exponential Backoff</h3>
+        <p>When LLM calls fail, retry with increasing delays. Prevents overwhelming a struggling service.</p>
+        <div class="pattern-diagram">
+          <div class="flow-node flow-node--red" style="font-size:0.7rem;width:100%">Fail → wait 1s</div>
+          <div class="flow-arrow-down">↓</div>
+          <div class="flow-node flow-node--amber" style="font-size:0.7rem;width:100%">Fail → wait 2s</div>
+          <div class="flow-arrow-down">↓</div>
+          <div class="flow-node flow-node--amber" style="font-size:0.7rem;width:100%">Fail → wait 4s</div>
+          <div class="flow-arrow-down">↓</div>
+          <div class="flow-node flow-node--green" style="font-size:0.7rem;width:100%">Success ✓</div>
+        </div>
+      </div>
+      <div class="glass-card">
+        <h3>🔌 Circuit Breaker</h3>
+        <p>If a service keeps failing, <strong>stop calling it entirely</strong>. Prevents cascading failures.</p>
+        <div class="pattern-diagram">
+          <div class="flow-node flow-node--green" style="font-size:0.7rem;width:100%">CLOSED (normal)</div>
+          <div class="flow-arrow-down">↓ N failures</div>
+          <div class="flow-node flow-node--red" style="font-size:0.7rem;width:100%">OPEN (blocking)</div>
+          <div class="flow-arrow-down">↓ cooldown</div>
+          <div class="flow-node flow-node--amber" style="font-size:0.7rem;width:100%">HALF-OPEN (test)</div>
+          <div class="loop-arrow"><span class="loop-label">success → closed</span></div>
+        </div>
+      </div>
+      <div class="glass-card">
+        <h3>🪣 Rate Limiting</h3>
+        <p>Token bucket algorithm. Prevents agent storms from hitting API rate limits.</p>
+        <div class="pattern-diagram">
+          <div class="flow-node flow-node--blue" style="font-size:0.7rem;width:100%">Bucket: 5 tokens</div>
+          <div class="flow-arrow-down">↓ refill 2/sec</div>
+          <div class="flow-node flow-node--cyan" style="font-size:0.7rem;width:100%">Call → consume 1</div>
+          <div class="flow-arrow-down">↓ empty</div>
+          <div class="flow-node flow-node--amber" style="font-size:0.7rem;width:100%">Wait for refill</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="callout callout--warning" style="max-width:1100px;margin-top:1rem">
+      ⚡ <strong>Production checklist:</strong> Bounded tools · Approval gates · max_iterations · Timeout · Context tracking · Retry with backoff · Circuit breaker · Rate limiting · Structured logging with trace IDs
+    </div>
+  </div>
+
+  <!-- ===== SLIDE 17: Summary ===== -->
+  <div class="slide slide--hero slide--centered" data-section="summary">
+    <div class="slide-label"><span>Summary</span></div>
+    <h2>Key <span class="gradient-text">Takeaways</span></h2>
+    <div class="grid-2" style="max-width:950px;margin-top:1.5rem">
+      <div class="glass-card">
+        <h3>🧠 Foundations</h3>
+        <ul class="check-list">
+          <li>LLMs are stateless — memory is an illusion you build</li>
+          <li>Tool use = your runtime does the work, not the LLM</li>
+          <li>Agent = LLM + tools + control loop where LLM <em>decides</em></li>
+        </ul>
+      </div>
+      <div class="glass-card">
+        <h3>📐 Patterns</h3>
+        <ul class="check-list">
+          <li>8 workflow patterns for every scenario</li>
+          <li>3 orchestration styles: State Machine, DAG, Dynamic Graph</li>
+          <li>Start with workflows, escalate to agents only when needed</li>
+        </ul>
+      </div>
+      <div class="glass-card">
+        <h3>⚠️ Multi-Agent</h3>
+        <ul class="check-list">
+          <li>Context explosion → summarize between agents</li>
+          <li>Error propagation → validation gates</li>
+          <li>Don't use multi-agent when single agent works</li>
+        </ul>
+      </div>
+      <div class="glass-card">
+        <h3>🚀 Production</h3>
+        <ul class="check-list">
+          <li>Always: bounded tools, max_iterations, timeout</li>
+          <li>Retry + circuit breaker + rate limiting</li>
+          <li>Structured logging with trace IDs for debugging</li>
+        </ul>
+      </div>
+    </div>
+    <p style="margin-top:2rem;color:var(--text-muted);font-size:0.85rem">Navigate with ← → arrow keys · Swipe on mobile</p>
+  </div>
+
+</div><!-- /presentation -->
+
+<!-- Section Navigation Dots -->
+<nav class="section-nav">
+  <div class="section-dot active" data-section="intro" data-label="Title"></div>
+  <div class="section-dot" data-section="foundations" data-label="Foundations"></div>
+  <div class="section-dot" data-section="agent" data-label="What is an Agent?"></div>
+  <div class="section-dot" data-section="failures" data-label="Agent Failures"></div>
+  <div class="section-dot" data-section="workflow" data-label="Workflows"></div>
+  <div class="section-dot" data-section="decision" data-label="Decision Framework"></div>
+  <div class="section-dot" data-section="multi-agent" data-label="Multi-Agent"></div>
+  <div class="section-dot" data-section="orchestration" data-label="Orchestration"></div>
+  <div class="section-dot" data-section="production" data-label="Production"></div>
+  <div class="section-dot" data-section="summary" data-label="Summary"></div>
+</nav>
+
+<!-- Navigation Controls -->
+<div class="nav-controls">
+  <button class="nav-btn" id="prev-btn" disabled>←</button>
+  <span class="slide-counter">1 / 17</span>
+  <button class="nav-btn" id="next-btn">→</button>
+</div>
+
+<div class="keyboard-hint">
+  <kbd class="kbd">←</kbd> <kbd class="kbd">→</kbd> to navigate
+</div>
+
+<script src="app.js"></script>
+</body>
+</html>
