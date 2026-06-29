@@ -29,6 +29,8 @@ Every problem file follows this structure:
 | Binary Search — Rotated Sorted Array | [033 — Search in Rotated Sorted Array](./leetcode/033-search-in-rotated-sorted-array.md), [153 — Find Minimum](./leetcode/153-find-minimum-in-rotated-sorted-array.md) |
 | Sort + Two Pointers (K-Sum)          | [015 — 3Sum](./leetcode/015-three-sum.md)                                                                                                                              |
 | Two Pointers — Greedy (Shrink Ends)  | [011 — Container With Most Water](./leetcode/011-container-with-most-water.md)                                                                                         |
+| Bit Manipulation — XOR + Carry       | [371 — Sum of Two Integers](./leetcode/371-sum-of-two-integers.md)                                                                                                     |
+| Bit Manipulation — Count Set Bits    | [191 — Number of 1 Bits](./leetcode/191-number-of-1-bits.md)                                                                                                           |
 
 ## Problems by Number
 
@@ -44,6 +46,8 @@ Every problem file follows this structure:
 | 15  | [3Sum](./leetcode/015-three-sum.md)                                                            | Medium     | Sort + Two Pointers (K-Sum)          |
 | 153 | [Find Minimum in Rotated Sorted Array](./leetcode/153-find-minimum-in-rotated-sorted-array.md) | Medium     | Binary Search — Rotated Sorted Array |
 | 33  | [Search in Rotated Sorted Array](./leetcode/033-search-in-rotated-sorted-array.md)             | Medium     | Binary Search — Rotated Sorted Array |
+| 371 | [Sum of Two Integers](./leetcode/371-sum-of-two-integers.md)                                   | Medium     | Bit Manipulation — XOR + Carry       |
+| 191 | [Number of 1 Bits](./leetcode/191-number-of-1-bits.md)                                         | Easy       | Bit Manipulation — Count Set Bits    |
 
 ## Template for New Problems
 
@@ -52,3 +56,7 @@ Copy `leetcode/_template.md` when adding a new solution.
 ## Binary Search Reference
 
 Stuck on infinite loops or `left`/`right` updates? Read **[Binary Search Safety Guide](./binary-search-safety-guide.md)** first.
+
+## Bit Manipulation Reference
+
+Shifts, AND/XOR/OR, and bit tricks: **[Bit Manipulation Guide](./bit-manipulation-reference.md)**.
